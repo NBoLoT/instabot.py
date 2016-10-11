@@ -267,7 +267,7 @@ class InstaBot:
         if (self.login_status):
             
             if source.startswith('l:'):
-                source.replace('l:', '')
+                source = source.replace('l:', '')
                 a = ['LocationsPage', 'location', self.url_locations]    #location
             elif source == ':feed':
                 source = ''
