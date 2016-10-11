@@ -35,6 +35,7 @@ class InstaBot:
 
     url = 'https://www.instagram.com/'
     url_tag = 'https://www.instagram.com/explore/tags/'
+    url_locations = 'https://www.instagram.com/explore/locations/'
     url_likes = 'https://www.instagram.com/web/likes/%s/like/'
     url_unlike = 'https://www.instagram.com/web/likes/%s/unlike/'
     url_comment = 'https://www.instagram.com/web/comments/%s/add/'
@@ -43,6 +44,7 @@ class InstaBot:
     url_login = 'https://www.instagram.com/accounts/login/ajax/'
     url_logout = 'https://www.instagram.com/accounts/logout/'
     url_media_detail = 'https://www.instagram.com/p/%s/?__a=1'
+    url_user = 'https://www.instagram.com/%s'
     url_user_detail = 'https://www.instagram.com/%s/?__a=1'
 
     user_agent = ("Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 "
@@ -70,8 +72,11 @@ class InstaBot:
     log_file = 0
 
     # Other.
+    tag = 'tag'
+    user = 'user'
     user_id = 0
-    media_by_tag = 0
+    media_id = 0
+    liked_media_id = 0
     login_status = False
 
     # For new_auto_mod
@@ -147,7 +152,10 @@ class InstaBot:
         self.user_login = login.lower()
         self.user_password = password
 
-        self.media_by_tag = []
+        self.media_id = []
+        self.liked_media_id = []
+        self.tag = tag
+        self.user = user
 
         now_time = datetime.datetime.now()
         log_string = 'Instabot v1.0.1 started at %s:\n' % \
@@ -253,14 +261,28 @@ class InstaBot:
             self.logout()
         exit(0)
 
-    def get_media_id_by_tag(self, tag):
-        """ Get media ID set, by your hashtag """
+    def get_media_id(self, source, mode):
+        """ Get media ID """
 
         if (self.login_status):
-            log_string = "Get media id by tag: %s" % (tag)
+            
+            if source.startswith('l:'):
+                source.replace('l:', '')
+                a = ['LocationsPage', 'location', self.url_locations]    #location
+            elif source == ':feed':
+                source = ''
+                a = ['FeedPage', 'feed', self.url.replace('com/', 'com')]  #feed
+            elif mode == self.tag:
+                a = ['TagPage', 'tag', self.url_tag]                        #tag
+            elif mode == self.user:
+                a = ['ProfilePage', 'user', self.url]                        #user
+            else:
+                return False
+                
+            log_string = "Get media id by %s: %s" % (a[1], tag)
             self.write_log(log_string)
             if self.login_status == 1:
-                url_tag = '%s%s%s' % (self.url_tag, tag, '/')
+                url_source = '%s%s%s' % (a[2], source, '/')
                 try:
                     r = self.s.get(url_tag)
                     text = r.text
@@ -276,41 +298,46 @@ class InstaBot:
                         : all_data_end]
                     all_data = json.loads(json_str)
 
-                    self.media_by_tag = list(all_data['entry_data']['TagPage'][0] \
-                                                 ['tag']['media']['nodes'])
+                    self.media_id = list(self.all_data['entry_data'][a[0]][0] \
+                                                      [a[1]]['media']['nodes'])
                 except:
-                    self.media_by_tag = []
-                    self.write_log("Except on get_media!")
+                    self.media_id = []
+                    self.write_log("Except on get_media_id!")
             else:
                 return 0
 
     def like_all_exist_media(self, media_size=-1, delay=True):
-        """ Like all media ID that have self.media_by_tag """
+        """ Like all media ID that have self.media_id """
 
         if (self.login_status):
-            if self.media_by_tag != 0:
+            if self.media_id != 0:
                 i = 0
-                for d in self.media_by_tag:
+                for d in self.media_id:
                     # Media count by this tag.
                     if media_size > 0 or media_size < 0:
                         media_size -= 1
-                        l_c = self.media_by_tag[i]['likes']['count']
+                        l_c = self.media_id[i]['likes']['count']
+                        count = self.liked_media_id.count(self.media_id[i]['id'])
                         if ((l_c <= self.media_max_like and l_c >= self.media_min_like)
                             or (self.media_max_like == 0 and l_c >= self.media_min_like)
                             or (self.media_min_like == 0 and l_c <= self.media_max_like)
-                            or (self.media_min_like == 0 and self.media_max_like == 0)):
+                            or (self.media_min_like == 0 and self.media_max_like == 0)
+                            and count == 0):
+
+                            self.liked_media_id.append(self.media_id[i]['id'])
+
                             for blacklisted_user_name, blacklisted_user_id in self.user_blacklist.items():
-                                if (self.media_by_tag[i]['owner']['id'] == blacklisted_user_id):
+                                if (self.media_id[i]['owner']['id'] == blacklisted_user_id):
                                     self.write_log("Not liking media owned by blacklisted user: " + blacklisted_user_name)
                                     return False
-                            if (self.media_by_tag[i]['owner']['id'] == self.user_id):
+                            if (self.media_id[i]['owner']['id'] == self.user_id):
                                 self.write_log("Keep calm - It's your own media ;)")
                                 return False
 
                             try:
-                                caption = self.media_by_tag[i]['caption'].encode('ascii',errors='ignore')
+                                caption = self.media_id[i]['caption'].encode('ascii',errors='ignore')
                                 tag_blacklist = set(self.tag_blacklist)
-                                tags = {str.lower(tag.strip("#")) for tag in caption.split() if tag.startswith("#")}
+                                tags = {str.lower(tag.strip("#")) for tag in (caption.replace('#', ' #').split() if tag.startswith("#")}
                                 if tags.intersection(tag_blacklist):
                                         matching_tags = ', '.join(tags.intersection(tag_blacklist))
                                         self.write_log("Not liking media with blacklisted tag(s): " + matching_tags)
@@ -320,18 +347,18 @@ class InstaBot:
                                 return False
 
                             log_string = "Trying to like media: %s" % \
-                                         (self.media_by_tag[i]['id'])
+                                         (self.media_id[i]['id'])
                             self.write_log(log_string)
-                            like = self.like(self.media_by_tag[i]['id'])
-                            # comment = self.comment(self.media_by_tag[i]['id'], 'Cool!')
-                            # follow = self.follow(self.media_by_tag[i]["owner"]["id"])
+                            like = self.like(self.media_id[i]['id'])
+                            # comment = self.comment(self.media_id[i]['id'], 'Cool!')
+                            # follow = self.follow(self.media_id[i]["owner"]["id"])
                             if like != 0:
                                 if like.status_code == 200:
                                     # Like, all ok!
                                     self.error_400 = 0
                                     self.like_counter += 1
                                     log_string = "Liked: %s. Like #%i." % \
-                                                 (self.media_by_tag[i]['id'],
+                                                 (self.media_id[i]['id'],
                                                   self.like_counter)
                                     self.write_log(log_string)
                                 elif like.status_code == 400:
@@ -469,15 +496,15 @@ class InstaBot:
         if (self.login_status):
             while True:
                 random.shuffle(self.tag_list)
-                self.get_media_id_by_tag(random.choice(self.tag_list))
+                self.get_media_id(random.choice(self.tag_list), self.tag)
                 self.like_all_exist_media(random.randint \
                                               (1, self.max_like_for_one_tag))
 
     def new_auto_mod(self):
         while True:
             # ------------------- Get media_id -------------------
-            if len(self.media_by_tag) == 0:
-                self.get_media_id_by_tag(random.choice(self.tag_list))
+            if len(self.media_id) == 0:
+                self.get_media_id(random.choice(self.tag_list), self.tag)
                 self.this_tag_like_count = 0
                 self.max_tag_like_count = random.randint(1, self.max_like_for_one_tag)
             # ------------------- Like -------------------
@@ -495,7 +522,7 @@ class InstaBot:
 
     def new_auto_mod_like(self):
         if time.time() > self.next_iteration["Like"] and self.like_per_day != 0 \
-                and len(self.media_by_tag) > 0:
+                and len(self.media_id) > 0:
             # You have media_id to like:
             if self.like_all_exist_media(media_size=1, delay=False):
                 # If like go to sleep:
@@ -504,21 +531,21 @@ class InstaBot:
                 # Count this tag likes:
                 self.this_tag_like_count += 1
                 if self.this_tag_like_count >= self.max_tag_like_count:
-                    self.media_by_tag = [0]
+                    self.media_id = [0]
             # Del first media_id
-            del self.media_by_tag[0]
+            del self.media_id[0]
 
     def new_auto_mod_follow(self):
         if time.time() > self.next_iteration["Follow"] and \
-                        self.follow_per_day != 0 and len(self.media_by_tag) > 0:
-            if self.media_by_tag[0]["owner"]["id"] == self.user_id:
+                        self.follow_per_day != 0 and len(self.media_id) > 0:
+            if self.media_id[0]["owner"]["id"] == self.user_id:
                 self.write_log("Keep calm - It's your own profile ;)")
                 return
-            log_string = "Trying to follow: %s" % (self.media_by_tag[0]["owner"]["id"])
+            log_string = "Trying to follow: %s" % (self.media_id[0]["owner"]["id"])
             self.write_log(log_string)
 
-            if self.follow(self.media_by_tag[0]["owner"]["id"]) != False:
-                self.bot_follow_list.append([self.media_by_tag[0]["owner"]["id"],
+            if self.follow(self.media_id[0]["owner"]["id"]) != False:
+                self.bot_follow_list.append([self.media_id[0]["owner"]["id"],
                                              time.time()])
                 self.next_iteration["Follow"] = time.time() + \
                                                 self.add_time(self.follow_delay)
@@ -539,12 +566,12 @@ class InstaBot:
 
     def new_auto_mod_comments(self):
         if time.time() > self.next_iteration["Comments"] and self.comments_per_day != 0 \
-                and len(self.media_by_tag) > 0 \
-                and self.check_exisiting_comment(self.media_by_tag[0]['code']) == False:
+                and len(self.media_id) > 0 \
+                and self.check_exisiting_comment(self.media_id[0]['code']) == False:
             comment_text = self.generate_comment()
-            log_string = "Trying to comment: %s" % (self.media_by_tag[0]['id'])
+            log_string = "Trying to comment: %s" % (self.media_id[0]['id'])
             self.write_log(log_string)
-            if self.comment(self.media_by_tag[0]['id'], comment_text) != False:
+            if self.comment(self.media_id[0]['id'], comment_text) != False:
                 self.next_iteration["Comments"] = time.time() + \
                                                   self.add_time(self.comments_delay)
 
@@ -580,14 +607,14 @@ class InstaBot:
         if all_data['media']['owner']['id'] == self.user_id:
                 self.write_log("Keep calm - It's your own media ;)")
                 # Del media to don't loop on it
-                del self.media_by_tag[0]
+                del self.media_id[0]
                 return True
         comment_list = list(all_data['media']['comments']['nodes'])
         for d in comment_list:
             if d['user']['id'] == self.user_id:
                 self.write_log("Keep calm - Media already commented ;)")
                 # Del media to don't loop on it
-                del self.media_by_tag[0]
+                del self.media_id[0]
                 return True
         return False
 
