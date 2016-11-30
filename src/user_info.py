@@ -11,39 +11,26 @@ def get_user_info (self, username):
         log_string = "%s : Get user info \n%s"%(self.user_login,now_time.strftime("%d.%m.%Y %H:%M"))
         self.write_log(log_string)
         if self.login_status == 1:
-            url = 'https://www.instagram.com/%s/'%(username)
+            url = self.url_user_detail % username
             try :
                 r = self.s.get(url)
-                text = r.text
-                finder_text_start = ('<script type="text/javascript">'
-                                         'window._sharedData = ')
-                finder_text_start_len = len(finder_text_start)-1
-                finder_text_end = ';</script>'
-
-                all_data_start = text.find(finder_text_start)
-                all_data_end = text.find(finder_text_end, all_data_start + 1)
-                json_str = text[(all_data_start + finder_text_start_len + 1) \
-                                   : all_data_end]
-                all_data = json.loads(json_str)
-                                        
-                user_info = list(all_data['entry_data']['ProfilePage'])
-              	
+                user_info = json.loads(r.text)['user']              	
                 log_string="Checking user info.."
                 self.write_log(log_string)
 
-                follows = user_info[0]['user']['follows']['count']
-                follower = user_info[0]['user']['followed_by']['count']
+                follows = user_info['follows']['count']
+                follower = user_info['followed_by']['count']
                 if self.is_self_checking is not False:
                     self.self_following = follows
                     self.self_follower = follower
                     self.is_self_checking = False
                     self.is_checked = True
                     return 0
-                media = user_info[0]['user']['media']['count']
-                follow_viewer = user_info[0]['user']['follows_viewer']
-                followed_by_viewer = user_info[0]['user']['followed_by_viewer']
-                requested_by_viewer = user_info[0]['user']['requested_by_viewer']
-                has_requested_viewer = user_info[0]['user']['has_requested_viewer']
+                media = user_info['media']['count']
+                follow_viewer = user_info['follows_viewer']
+                followed_by_viewer = user_info['followed_by_viewer']
+                requested_by_viewer = user_info['requested_by_viewer']
+                has_requested_viewer = user_info['has_requested_viewer']
                 log_string = "Follower : %i" % (follower)
                 self.write_log(log_string)
                 log_string = "Following : %s" % (follows)
